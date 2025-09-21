@@ -1,52 +1,37 @@
 # syntax = docker/dockerfile:1
-FROM node:22-alpine AS base
 
-ARG PORT=3000
-ENV NEXT_TELEMETRY_DISABLED=1
+# Build stage - includes dev deps for building
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-# Dependencies Stage
-FROM base AS dependencies
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --only=production && \
-    cp -R node_modules /tmp/prod_node_modules && \
-    npm ci --include=dev
+    npm ci --frozen-lockfile
 
-# Builder Stage
-FROM base AS builder
-COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Public build-time environment variables (customize as needed)
+# Public build-time environment variables
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN --mount=type=cache,target=/app/.next/cache \
     npm run build
 
-# Production Runtime Stage
-FROM base AS runner
+# Production stage - ultra-minimal distroless runtime
+FROM gcr.io/distroless/nodejs22-debian12:nonroot AS runner
+WORKDIR /app
+
 ENV NODE_ENV=production
-ENV PORT=$PORT
-
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
-
-# Create and set permissions for .next directory
-RUN mkdir .next && chown nextjs:nodejs .next
-
-# Copy production dependencies
-COPY --from=dependencies /tmp/prod_node_modules ./node_modules
-
-# Copy only necessary files from builder stage
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-EXPOSE $PORT
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+# Copy only the bare minimum production files
+# Next.js standalone includes all necessary node_modules
+COPY --from=builder --chown=nonroot:nonroot /app/.next/standalone ./
+COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
+COPY --from=builder --chown=nonroot:nonroot /app/public ./public
+
+EXPOSE 3000
+
+CMD ["server.js"]
