@@ -63,7 +63,7 @@ export async function PUT(
       );
     }
 
-    const updateData: any = {};
+    const updateData: Partial<UpdateTodoRequest> = {};
     
     if (updates.title !== undefined) {
       updateData.title = updates.title.trim();

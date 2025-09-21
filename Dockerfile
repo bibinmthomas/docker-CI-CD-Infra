@@ -11,7 +11,7 @@ COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --only=production && \
     cp -R node_modules /tmp/prod_node_modules && \
-    npm ci
+    npm ci --include=dev
 
 # Builder Stage
 FROM base AS builder
